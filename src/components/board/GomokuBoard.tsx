@@ -49,11 +49,11 @@ export function GomokuBoard({
           <stop offset="35%" stopColor="#1c1c24" />
           <stop offset="100%" stopColor="#06060a" />
         </radialGradient>
-        {/* 白云子：象牙暖白 + 微微透感 */}
+        {/* 白云子：以白为主，仅在底部一点点暖灰，避免发黄 */}
         <radialGradient id="gomoku-white-yunzi" cx="35%" cy="28%" r="72%">
           <stop offset="0%" stopColor="#ffffff" />
-          <stop offset="55%" stopColor="#f3ecd6" />
-          <stop offset="100%" stopColor="#d8c8a0" />
+          <stop offset="60%" stopColor="#f7f6f2" />
+          <stop offset="100%" stopColor="#dad7cf" />
         </radialGradient>
       </defs>
 
@@ -130,7 +130,7 @@ export function GomokuBoard({
                 ? "url(#gomoku-black-yunzi)"
                 : "url(#gomoku-white-yunzi)"
             }
-            stroke={state.turn === "black" ? "#0a0a10" : "#b5a380"}
+            stroke={state.turn === "black" ? "#0a0a10" : "#aaa6a0"}
             strokeWidth={0.4}
             opacity={0.4}
             pointerEvents="none"
@@ -194,7 +194,7 @@ function Stone({
       ? "url(#gomoku-black-yunzi)"
       : "url(#gomoku-white-yunzi)";
   // 描边非纯黑/纯白，与云子内部色相协调
-  const stroke = color === "black" ? "#0a0a10" : "#b5a380";
+  const stroke = color === "black" ? "#0a0a10" : "#aaa6a0";
   const highlightFill = color === "black" ? "#f5e6b6" : "#8a3838";
   return (
     <g

@@ -83,11 +83,11 @@ function Logo() {
           <stop offset="35%" stopColor="#202028" />
           <stop offset="100%" stopColor="#08080c" />
         </radialGradient>
-        {/* 精灵的灵子：象牙月光白，温和不冷 */}
+        {/* 精灵的灵子：月光白为主，底部稍稍带一点暖灰，避免发黄 */}
         <radialGradient id="spirit-stone" cx="35%" cy="28%" r="72%">
           <stop offset="0%" stopColor="#ffffff" />
-          <stop offset="45%" stopColor="#f7f1e2" />
-          <stop offset="100%" stopColor="#ddd0b0" />
+          <stop offset="55%" stopColor="#f6f5f0" />
+          <stop offset="100%" stopColor="#d4d1c6" />
         </radialGradient>
         {/* 月光光晕：通透的柔白，不带蓝 */}
         <radialGradient id="aura" cx="50%" cy="50%" r="50%">
@@ -126,13 +126,13 @@ function Logo() {
       {/* 黑子（人） */}
       <circle cx="44" cy="60" r="13" fill="url(#black-stone)" />
 
-      {/* 灵子（精灵）—— 描边用米色而非蓝色，避免冷调 */}
+      {/* 灵子（精灵）—— 描边用偏中性的暖灰 */}
       <circle
         cx="76"
         cy="60"
         r="13"
         fill="url(#spirit-stone)"
-        stroke="#c0b48a"
+        stroke="#a8a39a"
         strokeOpacity="0.7"
         strokeWidth="0.6"
       />
