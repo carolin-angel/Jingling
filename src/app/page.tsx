@@ -66,8 +66,8 @@ export default function Home() {
 function Logo() {
   return (
     <svg
-      width={96}
-      height={96}
+      width={112}
+      height={112}
       viewBox="0 0 120 120"
       aria-label="Jingling 棋苑 logo"
       className="drop-shadow-sm"
@@ -82,31 +82,58 @@ function Logo() {
           <stop offset="60%" stopColor="#1a1a1a" />
           <stop offset="100%" stopColor="#000" />
         </radialGradient>
-        <radialGradient id="white-stone" cx="38%" cy="32%" r="65%">
+        {/* 精灵的灵子：偏冷调的珍珠白 */}
+        <radialGradient id="spirit-stone" cx="38%" cy="30%" r="65%">
           <stop offset="0%" stopColor="#ffffff" />
-          <stop offset="100%" stopColor="#d0d0d0" />
+          <stop offset="45%" stopColor="#e8f0ff" />
+          <stop offset="100%" stopColor="#a8c5f0" />
+        </radialGradient>
+        {/* 灵气光晕 */}
+        <radialGradient id="aura" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="#bcd5ff" stopOpacity="0.8" />
+          <stop offset="55%" stopColor="#bcd5ff" stopOpacity="0.25" />
+          <stop offset="100%" stopColor="#bcd5ff" stopOpacity="0" />
         </radialGradient>
       </defs>
 
-      {/* 木色背景圆 */}
+      {/* 木色棋盘底 */}
       <circle cx="60" cy="60" r="54" fill="url(#wood)" opacity="0.95" />
 
-      {/* 棋盘交叉线 */}
+      {/* 棋盘交叉线（淡） */}
       <g stroke="#7a5a3a" strokeWidth="0.9" opacity="0.55">
         <line x1="14" y1="60" x2="106" y2="60" />
         <line x1="44" y1="14" x2="44" y2="106" />
         <line x1="76" y1="14" x2="76" y2="106" />
       </g>
 
-      {/* 黑白两子在线条交叉点上 */}
+      {/* 灵子背后的光晕（半径大于棋子，溢出来） */}
+      <circle cx="76" cy="60" r="24" fill="url(#aura)" />
+
+      {/* 小星点：散在灵子周围 */}
+      <g fill="#ffffff">
+        <circle cx="91" cy="44" r="1.4" opacity="0.95" />
+        <circle cx="96" cy="62" r="0.9" opacity="0.85" />
+        <circle cx="84" cy="80" r="1.1" opacity="0.9" />
+        <circle cx="62" cy="42" r="0.7" opacity="0.7" />
+      </g>
+
+      {/* 四芒星：精灵的"灵签" */}
+      <g transform="translate(86 40)" fill="#ffffff" opacity="0.95">
+        <path d="M 0 -6 L 1.4 -1.4 L 6 0 L 1.4 1.4 L 0 6 L -1.4 1.4 L -6 0 L -1.4 -1.4 Z" />
+      </g>
+
+      {/* 黑子（人） */}
       <circle cx="44" cy="60" r="13" fill="url(#black-stone)" />
+
+      {/* 灵子（精灵） */}
       <circle
         cx="76"
         cy="60"
         r="13"
-        fill="url(#white-stone)"
-        stroke="#aaa"
-        strokeWidth="0.4"
+        fill="url(#spirit-stone)"
+        stroke="#9bb8e8"
+        strokeOpacity="0.7"
+        strokeWidth="0.6"
       />
     </svg>
   );
