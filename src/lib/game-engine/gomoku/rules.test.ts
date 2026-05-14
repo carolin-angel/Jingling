@@ -162,6 +162,90 @@ describe("detectWin — 活四（项目自定义胜利条件）", () => {
   });
 });
 
+describe("detectWin — 活四需考虑对手即将获胜的威胁（2026-05-14 修复）", () => {
+  it("己方活四 + 对方冲四（一端空一端堵）→ 不应判己方胜", () => {
+    // 对方白棋冲四：(0,0)..(3,0) 一端是边界(被堵)，另一端 (4,0) 是空
+    // 下一步白棋走 (4,0) 即五连
+    // 己方黑棋此时做出活四：(5,7),(6,7),(7,7),(8,7) 两端 (4,7) 与 (9,7) 都空
+    // 但白棋有冲四威胁 → 黑棋活四不应自动判胜
+    const board = makeBoard([
+      [0, 0, "white"],
+      [1, 0, "white"],
+      [2, 0, "white"],
+      [3, 0, "white"],
+      [5, 7, "black"],
+      [6, 7, "black"],
+      [7, 7, "black"],
+      [8, 7, "black"],
+    ]);
+    // 黑刚落的最后一手假设是 (6,7)（活四的内点）
+    expect(detectWin(board, 6, 7)).toBeNull();
+  });
+
+  it("己方活四 + 对方跳四（XX_XX）→ 不应判己方胜", () => {
+    // 对方白棋跳四：(0,0),(1,0),(3,0),(4,0)，中间 (2,0) 空，填进去就 5 连
+    const board = makeBoard([
+      [0, 0, "white"],
+      [1, 0, "white"],
+      [3, 0, "white"],
+      [4, 0, "white"],
+      [5, 7, "black"],
+      [6, 7, "black"],
+      [7, 7, "black"],
+      [8, 7, "black"],
+    ]);
+    expect(detectWin(board, 6, 7)).toBeNull();
+  });
+
+  it("己方活四 + 对方仅有三连珠（不构成立即威胁）→ 判己方胜", () => {
+    // 对方白棋三连：(0,0),(1,0),(2,0) — 下一步白棋走 (3,0) 也只是四子，不是五连
+    const board = makeBoard([
+      [0, 0, "white"],
+      [1, 0, "white"],
+      [2, 0, "white"],
+      [5, 7, "black"],
+      [6, 7, "black"],
+      [7, 7, "black"],
+      [8, 7, "black"],
+    ]);
+    expect(detectWin(board, 6, 7)?.reason).toBe("open_four");
+  });
+
+  it("己方活四 + 对方四子被两头堵（无威胁）→ 判己方胜", () => {
+    // 对方白棋 4 连两端均被己方黑棋堵：黑 (0,0)、白 (1,0)..(4,0)、黑 (5,0)
+    // 白棋无法靠这条线得 5 连
+    const board = makeBoard([
+      [0, 0, "black"],
+      [5, 0, "black"],
+      [1, 0, "white"],
+      [2, 0, "white"],
+      [3, 0, "white"],
+      [4, 0, "white"],
+      [5, 7, "black"],
+      [6, 7, "black"],
+      [7, 7, "black"],
+      [8, 7, "black"],
+    ]);
+    expect(detectWin(board, 6, 7)?.reason).toBe("open_four");
+  });
+
+  it("己方五连胜 与 对方威胁同时存在 → 仍判己方五连胜（五连优先）", () => {
+    // 即便对方有冲四，己方走出五连一定胜
+    const board = makeBoard([
+      [0, 0, "white"],
+      [1, 0, "white"],
+      [2, 0, "white"],
+      [3, 0, "white"],
+      [5, 7, "black"],
+      [6, 7, "black"],
+      [7, 7, "black"],
+      [8, 7, "black"],
+      [9, 7, "black"],
+    ]);
+    expect(detectWin(board, 9, 7)?.reason).toBe("five");
+  });
+});
+
 describe("detectWin — 活四的反例（不应判胜）", () => {
   it("一端被对方棋子堵 → 不胜", () => {
     // O X X X X _ — 左端是白（对方），右端是空
