@@ -38,45 +38,56 @@
 ```
 src/
 ├── app/
-│   ├── page.tsx                 # 首页：两款游戏卡片 + 联机入口
+│   ├── page.tsx                 # 首页：精灵 logo + 寄语 + 两款游戏卡片 + 联机入口
+│   ├── layout.tsx               # 全局布局，挂载 NavBar
 │   ├── gomoku/page.tsx          # 五子棋本地双人
 │   ├── play/
-│   │   ├── page.tsx             # 联机大厅（创建房间）
+│   │   ├── page.tsx             # 联机大厅（赛制选择器 + 创建房间）
 │   │   └── [matchId]/
-│   │       ├── page.tsx         # 路由包装：解开 params Promise
-│   │       └── MatchClient.tsx  # 联机对局核心客户端组件
-│   └── layout.tsx
+│   │       ├── page.tsx         # 路由包装；key={matchId} 防状态泄漏
+│   │       └── MatchClient.tsx  # 联机对局核心；含系列赛比分 + rematch 流程
+│   ├── auth/
+│   │   ├── page.tsx             # 登录页（邮箱魔法链接 + GitHub OAuth）
+│   │   └── callback/route.ts    # OAuth/魔法链接回调：exchangeCodeForSession
+│   ├── my/page.tsx              # 我的对局列表（含"关闭等待房间"）
+│   └── api/keepalive/route.ts   # Edge route，Vercel Cron 每天调用防 Supabase 暂停
 ├── components/
+│   ├── NavBar.tsx               # 顶部导航：登录/退出/我的对局
 │   ├── auth/NicknameDialog.tsx
-│   ├── board/GomokuBoard.tsx    # SVG 棋盘：可下/只读、悬停预览、落子动画
+│   ├── board/GomokuBoard.tsx    # SVG 棋盘；含云子渐变 + 悬停预览 + 落子动画
 │   └── match/
 │       ├── MoveList.tsx         # 走子记录面板，可点击跳转复盘
 │       └── VictoryOverlay.tsx   # 胜利/失败/和棋浮层
 ├── lib/
 │   ├── audio/
-│   │   └── useGameAudio.ts      # Web Audio 合成音效 + 静音持久化
+│   │   └── useGameAudio.ts      # Web Audio "哒"声合成 + 静音持久化
 │   ├── game-engine/
 │   │   ├── types.ts             # 通用 Game<S,M,Init> 接口
 │   │   └── gomoku/
 │   │       ├── types.ts         # GomokuState, GomokuMove, ...
 │   │       ├── pi-digits.ts     # 圆周率小数前 2400 位
 │   │       ├── firstMove.ts     # decideBlack(hhmm, host)
-│   │       ├── rules.ts         # isLegalMove, detectWin
+│   │       ├── rules.ts         # isLegalMove, detectWin（含对手威胁检查）
 │   │       ├── undo.ts          # 悔棋状态机
 │   │       ├── index.ts         # 装配 Game 接口 + snapshotAt
-│   │       └── *.test.ts        # 48 个单元测试
+│   │       └── *.test.ts        # 53 个单元测试
 │   ├── realtime/
-│   │   └── useMatchSync.ts      # 订阅 matches/moves 表变更
+│   │   └── useMatchSync.ts      # 订阅 matches/moves；自动重连 + 乐观更新
 │   └── supabase/
 │       ├── client.ts            # 浏览器端 client
 │       ├── server.ts            # SSR client
-│       ├── auth.ts              # ensureSession + getCurrentSession
-│       ├── matches.ts           # createMatch, joinMatch, submitMove, finishMatch
+│       ├── auth.ts              # ensureSession / signInWithMagicLink /
+│       │                        # signInWithGitHub / signOut / fetchMyMatches
+│       ├── matches.ts           # createMatch / joinMatch / submitMove /
+│       │                        # finishMatch / abortMatch / createRematch /
+│       │                        # fetchSeriesGames
 │       └── types.ts             # 与 schema 对应的 TypeScript 类型
 ├── test/setup.ts                # Vitest 全局 setup
 supabase/
 └── migrations/
-    └── 0001_init.sql            # 表结构、RLS、join_match RPC
+    ├── 0001_init.sql            # 初始表 + RLS + join_match RPC
+    └── 0002_rematch_and_series.sql # rematch_match_id, series_*, HHMM 触发器
+vercel.json                      # Vercel Cron 配置（每日 ping /api/keepalive）
 vitest.config.mts
 .env.example
 .env.local                       # 本地凭据，已 gitignore
@@ -108,21 +119,31 @@ export interface Game<State, Move, InitOptions = unknown> {
 | 棋盘 | 15×15，黑先 | `gomoku/types.ts` BOARD_SIZE |
 | **悔棋** | 每人每局申请一次；需对方同意；成功才算用过 | `gomoku/undo.ts` |
 | **执黑决定** | 每局开局服务器时刻 HHMM（如 17:05 → 1705），查圆周率小数第 N 位。奇数 → 房主执黑，偶数 → 后加入者执黑。HHMM=0 取第 1 位。每局重新计算 | `gomoku/firstMove.ts` |
-| **胜负** | 五连珠胜（标准）**或** 活四胜（4 连珠 + **两端均为棋盘内空格**） | `gomoku/rules.ts` |
+| **胜负（含 2026-05-14 修复）** | 五连珠胜（标准）**或** 活四胜（4 连珠 + **两端均为棋盘内空格**），且**对手不能已有"下一步即五连"的威胁**（冲四/跳四） | `gomoku/rules.ts` 的 `detectWin` + `opponentCanMakeFiveNextMove` |
 | 边界算被堵 | 4 连珠靠墙 + 一端空格 → **不**算活四 → 不胜 | 同上 |
 | 结束界面 | 数秒胜利动画 + 失败方"再接再厉"鼓励画面 | `VictoryOverlay.tsx` |
 
 ### 2.4 数据库 schema（Postgres / Supabase）
 
-3 张表 + 1 个 RPC：
+3 张表 + 2 个 RPC + 1 个触发器（截至 2026-05-14）：
 
 ```sql
 profiles (id ←auth.users.id, nickname, is_anonymous, ...)
 matches  (id, game_type, status, player_a, player_b, player_a_nickname,
           player_b_nickname, start_hhmm, winner, result_reason,
-          share_token unique, undo_used_a/b, ...)
+          share_token unique, undo_used_a/b,
+          -- 0002 新增：
+          rematch_match_id ← matches,
+          series_format text default 'bo1' check in (bo1,bo3,bo5),
+          series_parent_id ← matches,
+          series_round int default 1,
+          ...)
 moves    (match_id, ply, notation, data jsonb, primary key(match_id, ply))
 ```
+
+RPC：
+- `join_match(match_id, nickname)` — 加入等待房间，由服务器计算并写入 `start_hhmm`
+- 触发器 `matches_set_start_hhmm` — 在 status 转 `playing` 时自动写入 `start_hhmm` 和 `started_at`（0002 加，使 rematch 路径也能享受服务端 HHMM）
 
 **RLS 策略要点：**
 
@@ -165,15 +186,21 @@ moves    (match_id, ply, notation, data jsonb, primary key(match_id, ply))
 | **Phase 1 UX** | ✅ | 走子记录面板、悬停预览、落子动画、音效（落子/胜利/失败）、静音持久化 |
 | **Phase 2** 联机对战 MVP | ✅ | Supabase Auth（匿名）+ 建房/加入/Realtime/复盘 |
 | **Phase 5** 部署 | ✅ | GitHub 推送 + Vercel 部署上线（https://jingling.vercel.app）+ Cron keepalive 防 Supabase 暂停 |
+| **登录系统** | ✅ | 邮箱魔法链接 + GitHub OAuth；匿名→正式账号无缝升级；`/auth`、`/auth/callback`、`/my` 我的对局列表 |
+| **联机配套（部分）** | ✅ | 关闭房间（abort）、"再来一局"链式 BO1、系列赛 BO3/BO5（自动连下 + 系列比分徽章） |
+| **首页视觉** | ✅ | 自定义"精灵+棋盘"SVG logo、月光光晕、寄语"对弈，是另一种聊天"、卡片做了渐变与棋盘纹装饰 |
+| **棋子质感** | ✅ | 黑/白棋子改云子风：辐射渐变 + 协调描边，不再是纯黑纯白；最后一手标记降饱和 |
+| **落子音效** | ✅ | 从单一 1.4kHz 三角波"叮"换为"哒"：bandpass 滤波短噪声 + 衰减低频本体 |
 | **Phase 1.3** 中国象棋 | ⏳ | 未做 |
-| **Phase 2** 联机配套 | ⏳ | 联机悔棋协商、投降、求和、计时未做 |
-| **Phase 3** 我的对局/分享 | ⏳ | 未做 |
+| **Phase 2** 联机剩余 | ⏳ | 联机悔棋协商、投降、求和、计时未做 |
+| **Phase 3** 公开分享页 | ⏳ | `/share/<token>` 未做（"我的对局"列表已实现） |
 | **Phase 4** 残局/教学 | ⏳ | 未做 |
 
-**测试覆盖**：`pnpm test:run` → **48/48 通过**
+**测试覆盖**：`pnpm test:run` → **53/53 通过**
 
 - 圆周率前 2400 位用 BigInt Machin 公式独立计算后交叉核对
 - 活四在 4 个方向都验证，边界被堵的反例也覆盖
+- 活四的"对手有冲四/跳四威胁则不胜"反例（5 个新增用例）
 - 悔棋配额状态机
 - HHMM 边界（0 / 1705 / 2359）
 
@@ -560,6 +587,90 @@ return null;
 
 测试总数从 48 增至 **53**，全部通过。
 
+### 4.7 登录系统 + 系列赛 相关
+
+#### 问题 22：Supabase 默认禁用 "Manual Linking"
+
+**现象**：实现"匿名号点 GitHub 登录后无缝升级"用 `supabase.auth.linkIdentity()`，浏览器报：
+
+```
+链接 GitHub 失败：Manual linking is disabled
+```
+
+**原因**：Supabase 把 `linkIdentity` 这种"用户主动把身份附加到当前 session"的 API 默认关闭，需要在 Dashboard 显式开启。
+
+**解决**：Authentication → Configuration → 找 `Allow Manual Linking` 开关 → 打开 → Save。无需重新部署。
+
+#### 问题 23：Vercel 环境变量输入框 "Key" 容易误填
+
+**现象**：第一次配 env vars 把 `https://...supabase.co` 直接填到 Key 框，Vercel 报：
+
+```
+The name of your Environment Variable contains invalid characters.
+Only letters, digits, and underscores are allowed.
+```
+
+**原因**：Vercel 用 "Key / Value" 命名，但 Supabase 的 anon key 又恰好叫 "key"——语义重叠，容易把 token 当变量名填。
+
+**解决（实操记忆）**：Key 永远是 `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` 这种字母+下划线；Value 才是 URL 或 token 字符串。
+
+#### 问题 24：链式"再来一局"第二局结束按钮卡死（实战发现）
+
+**现象**（2026-05-14 实战）：
+
+```
+BO1 开局 → 第 1 局结束 → 点"再来一局" → 第 2 局开局 → 第 2 局结束 →
+"再来一局"按钮显示"准备中…"且 disabled，无法点击
+```
+
+**原因**：Next.js App Router 在 `/play/<id1>` → `/play/<id2>` 跳转时，因为路由模式相同
+（`/play/[matchId]`），**复用了 MatchClient 组件实例**。`rematchPending` 在第 1 局
+点击时被 `setRematchPending(true)`，跳转后没被重置，残留到第 2 局。第 2 局结束时
+按钮判定 `rematchPending===true` → 显示"准备中…"。
+
+**解决**：`src/app/play/[matchId]/page.tsx` 给 `<MatchClient />` 加 `key={matchId}`：
+
+```tsx
+return <MatchClient key={matchId} matchId={matchId} />;
+```
+
+React 看到 key 变化就强制卸载旧实例 + 重新挂载，所有 useState/useRef 都重新初始化。
+一行修复，无副作用。
+
+#### 问题 25：白棋子做云子质感后偏黄
+
+**现象**：第一版云子风渐变 (#ffffff → #f3ecd6 → #d8c8a0) 偏奶黄，整体看像"陈年象牙"，
+不像现代云子的"白如月光"。
+
+**解决**：把渐变改成 (#ffffff → #f7f6f2 → #dad7cf) 几乎纯白，只在外缘留极浅的暖灰；
+描边也从 #b5a380（带黄）换到 #aaa6a0（中性暖灰）。保留梯度感但视觉上"白"。
+
+#### 问题 26：落子音"叮"声太尖
+
+**现象**：初版用 1.4kHz triangle 单音模拟落子，听起来像门铃，缺乏"棋子打到木板"的质感。
+
+**解决**：分两层合成"哒"：
+1. 45ms 带通滤波白噪声（中心 1.8kHz, Q=3）→ 模拟木质表面的高频咔
+2. 80ms 正弦波从 260Hz 衰减到 80Hz → 模拟棋子落到棋盘的低频共鸣
+
+两者叠加在 Web Audio 的同一 `currentTime` 触发。Win/Lose 音效保持不变。
+
+#### 问题 27：GitHub OAuth App 注册时的若干坑
+
+**现象**集中：
+1. 表单填到一半发现按钮显示 "Update application"——说明 App 已经建过了，回到列表继续
+2. 生成 Client Secret 触发 GitHub Sudo Mode → 要 Verify via Email
+3. 验证码框误把邮箱地址当验证码填进去（实际要的是邮件里的 6 位数字）
+4. PAT 缺 `repo` scope → 推送 GitHub 拒绝 `403 denied`
+5. 本机 SSH key 关联另一个账号 (`carolin-angel23` vs `carolin-angel`) → 强制走 HTTPS
+6. HTTPS 推送被 GFW 卡，要给 git 显式配 Clash 代理（本机 Clash HTTP 端口 **7897**，非默认 7890）
+
+**解决记忆**：
+- PAT 必须勾整个 `repo` 大项
+- macOS 用户用 git HTTPS 推送可走 Git Credential Manager 浏览器授权流程
+- Clash 用户先 `nc -zv 127.0.0.1 78xx` 扫端口确认实际监听位置
+- git 走代理：`git config --global http.proxy http://127.0.0.1:7897`
+
 ---
 
 ## 5. 当前进度与下一步
@@ -572,20 +683,20 @@ return null;
 
 ### 5.2 建议的下一步选项
 
-按价值优先级：
+按价值优先级（截至 2026-05-14 收尾）：
 
 1. **中国象棋实现**（Phase 1.3）
    - 复用 `Game` 接口和 `MatchClient` 联机框架
    - 难点：7 种棋子走法、将军/将死/困毙/和棋、将帅照面
    - 工作量：1-2 周
 
-2. **联机功能补丁**（Phase 2 收尾）
+2. **联机功能补丁**（Phase 2 剩余）
    - 联机悔棋协商（一方提 → 另一方同意/拒绝的 broadcast 流）
    - 投降 / 求和 / 超时
    - 计时器
    - 工作量：3-5 天
 
-3. **我的对局列表 + 公开分享页**（Phase 3）
+3. **公开分享复盘页**（Phase 3）
    - `/play/history` 个人对局历史
    - `/share/<token>` 公开复盘
    - 工作量：3-5 天
@@ -675,7 +786,12 @@ node -e '...Machin formula...' > /tmp/pi-2400.txt
 6. **活四即胜的"两端均空"严格定义 + 对方无即胜威胁先决条件**：边界算被堵（标准活四定义）；2026-05-14 修复"忽略对方冲四"的实战 bug，活四只有在对手没有"下一步即 5 连"的威胁时才自动判胜
 7. **抽象 `Game<S,M>` 接口先行**：两款游戏并行开发的基础
 8. **Vercel Cron + 极简 keepalive 路由**：用 Vercel Hobby 自带的免费 Cron 每天 ping 一次 Supabase，防 Free tier 7 天无活动暂停。零成本零运维。
+9. **匿名 → 正式账号无缝升级**：用 `updateUser({ email })` / `linkIdentity({ provider })` 把现有匿名 user.id 升级为正式账号，保留全部历史对局；失败（邮箱已占用）时不自动 fallback，直接提示用户解决，避免历史数据"漂走"。
+10. **`key={matchId}` 强制 MatchClient 重挂载**：解决 App Router 在相同动态路由模式下复用组件导致的状态泄漏（本次 bug：链式 BO1 第二局结束按钮卡死）。比手动 useEffect 重置每个 state 更可靠。
+11. **rematch + 系列赛在客户端实现，配 atomic update + 兜底删除**：`createRematch` 不走 RPC，靠 `.is("rematch_match_id", null)` 条件 update 做幂等；竞态时落败方删除自己的孤儿 match 再 refetch。简单可维护，无新 SQL 函数。
+12. **系列赛进度通过自引用记录**：`series_parent_id` 指向根局，`series_round` 计第几局，`series_format` 整链路相同。比单独建 `series` 表轻量。
+13. **棋子云子质感 + 音效合成**：黑/白棋子改 radial gradient 模拟"半透明云子"；落子音用 Web Audio 合成噪声+低频本体，0 资源文件 0 第三方库。
 
 ---
 
-_最后更新：2026-05-14_
+_最后更新：2026-05-14（晚）_
