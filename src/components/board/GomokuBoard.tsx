@@ -42,6 +42,21 @@ export function GomokuBoard({
       style={{ background: "#e6c79a" }}
       onMouseLeave={() => setHover(null)}
     >
+      <defs>
+        {/* 黑云子：冷调蓝黑底 + 高光 */}
+        <radialGradient id="gomoku-black-yunzi" cx="35%" cy="28%" r="72%">
+          <stop offset="0%" stopColor="#4a4a55" />
+          <stop offset="35%" stopColor="#1c1c24" />
+          <stop offset="100%" stopColor="#06060a" />
+        </radialGradient>
+        {/* 白云子：象牙暖白 + 微微透感 */}
+        <radialGradient id="gomoku-white-yunzi" cx="35%" cy="28%" r="72%">
+          <stop offset="0%" stopColor="#ffffff" />
+          <stop offset="55%" stopColor="#f3ecd6" />
+          <stop offset="100%" stopColor="#d8c8a0" />
+        </radialGradient>
+      </defs>
+
       {/* 网格 */}
       <g stroke="#5c3a1a" strokeWidth={1}>
         {Array.from({ length: BOARD_SIZE }).map((_, i) => (
@@ -102,7 +117,7 @@ export function GomokuBoard({
         )}
       </g>
 
-      {/* 悬停预览 */}
+      {/* 悬停预览（半透明的云子色） */}
       {canInteract &&
         hover &&
         state.board[hover.y][hover.x] === null && (
@@ -110,10 +125,14 @@ export function GomokuBoard({
             cx={PAD + hover.x * CELL}
             cy={PAD + hover.y * CELL}
             r={CELL * 0.42}
-            fill={state.turn === "black" ? "#1a1a1a" : "#fafafa"}
-            stroke={state.turn === "black" ? "#000" : "#888"}
-            strokeWidth={1}
-            opacity={0.35}
+            fill={
+              state.turn === "black"
+                ? "url(#gomoku-black-yunzi)"
+                : "url(#gomoku-white-yunzi)"
+            }
+            stroke={state.turn === "black" ? "#0a0a10" : "#b5a380"}
+            strokeWidth={0.4}
+            opacity={0.4}
             pointerEvents="none"
           />
         )}
@@ -170,13 +189,16 @@ function Stone({
   animateIn: boolean;
 }) {
   const radius = CELL * 0.42;
-  const fill = color === "black" ? "#1a1a1a" : "#fafafa";
-  const stroke = color === "black" ? "#000" : "#888";
+  const fill =
+    color === "black"
+      ? "url(#gomoku-black-yunzi)"
+      : "url(#gomoku-white-yunzi)";
+  // 描边非纯黑/纯白，与云子内部色相协调
+  const stroke = color === "black" ? "#0a0a10" : "#b5a380";
+  const highlightFill = color === "black" ? "#f5e6b6" : "#8a3838";
   return (
     <g
-      style={
-        animateIn ? { transformOrigin: `${cx}px ${cy}px` } : undefined
-      }
+      style={animateIn ? { transformOrigin: `${cx}px ${cy}px` } : undefined}
       className={animateIn ? "gomoku-stone-new" : undefined}
     >
       <circle
@@ -185,15 +207,10 @@ function Stone({
         r={radius}
         fill={fill}
         stroke={stroke}
-        strokeWidth={1}
+        strokeWidth={0.6}
       />
       {highlighted && (
-        <circle
-          cx={cx}
-          cy={cy}
-          r={4}
-          fill={color === "black" ? "#fff" : "#c00"}
-        />
+        <circle cx={cx} cy={cy} r={3.5} fill={highlightFill} opacity={0.85} />
       )}
     </g>
   );

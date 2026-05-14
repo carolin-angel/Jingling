@@ -77,22 +77,23 @@ function Logo() {
           <stop offset="0%" stopColor="#f0d8b1" />
           <stop offset="100%" stopColor="#c4a878" />
         </radialGradient>
-        <radialGradient id="black-stone" cx="38%" cy="32%" r="65%">
-          <stop offset="0%" stopColor="#5a5a5a" />
-          <stop offset="60%" stopColor="#1a1a1a" />
-          <stop offset="100%" stopColor="#000" />
+        {/* 黑子：云子质感——蓝黑底、亮处有微微高光 */}
+        <radialGradient id="black-stone" cx="35%" cy="28%" r="72%">
+          <stop offset="0%" stopColor="#4a4a52" />
+          <stop offset="35%" stopColor="#202028" />
+          <stop offset="100%" stopColor="#08080c" />
         </radialGradient>
-        {/* 精灵的灵子：偏冷调的珍珠白 */}
-        <radialGradient id="spirit-stone" cx="38%" cy="30%" r="65%">
+        {/* 精灵的灵子：象牙月光白，温和不冷 */}
+        <radialGradient id="spirit-stone" cx="35%" cy="28%" r="72%">
           <stop offset="0%" stopColor="#ffffff" />
-          <stop offset="45%" stopColor="#e8f0ff" />
-          <stop offset="100%" stopColor="#a8c5f0" />
+          <stop offset="45%" stopColor="#f7f1e2" />
+          <stop offset="100%" stopColor="#ddd0b0" />
         </radialGradient>
-        {/* 灵气光晕 */}
+        {/* 月光光晕：通透的柔白，不带蓝 */}
         <radialGradient id="aura" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="#bcd5ff" stopOpacity="0.8" />
-          <stop offset="55%" stopColor="#bcd5ff" stopOpacity="0.25" />
-          <stop offset="100%" stopColor="#bcd5ff" stopOpacity="0" />
+          <stop offset="0%" stopColor="#ffffff" stopOpacity="0.85" />
+          <stop offset="45%" stopColor="#fff5e0" stopOpacity="0.35" />
+          <stop offset="100%" stopColor="#fff5e0" stopOpacity="0" />
         </radialGradient>
       </defs>
 
@@ -106,8 +107,8 @@ function Logo() {
         <line x1="76" y1="14" x2="76" y2="106" />
       </g>
 
-      {/* 灵子背后的光晕（半径大于棋子，溢出来） */}
-      <circle cx="76" cy="60" r="24" fill="url(#aura)" />
+      {/* 灵子背后的月光光晕（半径大于棋子，溢出来） */}
+      <circle cx="76" cy="60" r="26" fill="url(#aura)" />
 
       {/* 小星点：散在灵子周围 */}
       <g fill="#ffffff">
@@ -125,13 +126,13 @@ function Logo() {
       {/* 黑子（人） */}
       <circle cx="44" cy="60" r="13" fill="url(#black-stone)" />
 
-      {/* 灵子（精灵） */}
+      {/* 灵子（精灵）—— 描边用米色而非蓝色，避免冷调 */}
       <circle
         cx="76"
         cy="60"
         r="13"
         fill="url(#spirit-stone)"
-        stroke="#9bb8e8"
+        stroke="#c0b48a"
         strokeOpacity="0.7"
         strokeWidth="0.6"
       />
