@@ -7,11 +7,12 @@ import { useState } from "react";
 import { NicknameDialog } from "@/components/auth/NicknameDialog";
 import { ensureSession } from "@/lib/supabase/auth";
 import { createMatch } from "@/lib/supabase/matches";
-import type { GameType } from "@/lib/supabase/types";
+import type { GameType, SeriesFormat } from "@/lib/supabase/types";
 
 export default function PlayLobbyPage() {
   const router = useRouter();
   const [dialogFor, setDialogFor] = useState<GameType | null>(null);
+  const [format, setFormat] = useState<SeriesFormat>("bo1");
   const [error, setError] = useState<string | null>(null);
 
   const handleCreate = async (nickname: string) => {
@@ -22,6 +23,7 @@ export default function PlayLobbyPage() {
         gameType: dialogFor,
         userId: session.userId,
         nickname: session.nickname,
+        seriesFormat: format,
       });
       router.push(`/play/${match.id}`);
     } catch (err) {
@@ -42,7 +44,9 @@ export default function PlayLobbyPage() {
         </p>
       </header>
 
-      <section className="grid w-full max-w-3xl grid-cols-1 gap-4 sm:grid-cols-2">
+      <FormatSelector value={format} onChange={setFormat} />
+
+      <section className="mt-6 grid w-full max-w-3xl grid-cols-1 gap-4 sm:grid-cols-2">
         <GameCard
           title="五子棋"
           subtitle="Gomoku · 在线对战"
@@ -79,12 +83,64 @@ export default function PlayLobbyPage() {
       <NicknameDialog
         open={dialogFor !== null}
         title={`创建${dialogFor === "gomoku" ? "五子棋" : "象棋"}房间`}
-        description="昵称会显示在对手棋盘上。可随时改名。"
+        description={`赛制：${FORMAT_LABEL[format]}。昵称会显示在对手棋盘上。`}
         submitLabel="创建"
         onSubmit={handleCreate}
         onClose={() => setDialogFor(null)}
       />
     </main>
+  );
+}
+
+const FORMAT_LABEL: Record<SeriesFormat, string> = {
+  bo1: "快速一局",
+  bo3: "三局两胜（BO3）",
+  bo5: "五局三胜（BO5）",
+};
+
+const FORMAT_DESC: Record<SeriesFormat, string> = {
+  bo1: "下一局就结束。结束后可以选择再来一局",
+  bo3: "先赢 2 局者胜出系列赛。最多打 3 局，每局自动连下",
+  bo5: "先赢 3 局者胜出系列赛。最多打 5 局，每局自动连下",
+};
+
+function FormatSelector({
+  value,
+  onChange,
+}: {
+  value: SeriesFormat;
+  onChange: (v: SeriesFormat) => void;
+}) {
+  const options: SeriesFormat[] = ["bo1", "bo3", "bo5"];
+  return (
+    <div className="w-full max-w-3xl">
+      <div className="text-xs uppercase tracking-wide text-zinc-400">赛制</div>
+      <div className="mt-2 grid grid-cols-3 gap-2">
+        {options.map((opt) => (
+          <button
+            key={opt}
+            type="button"
+            onClick={() => onChange(opt)}
+            className={`rounded-xl border p-3 text-left transition-colors ${
+              value === opt
+                ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
+                : "border-zinc-200 bg-white hover:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-600"
+            }`}
+          >
+            <div className="text-sm font-medium">{FORMAT_LABEL[opt]}</div>
+            <div
+              className={`mt-1 text-xs ${
+                value === opt
+                  ? "text-zinc-200 dark:text-zinc-700"
+                  : "text-zinc-500"
+              }`}
+            >
+              {FORMAT_DESC[opt]}
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 

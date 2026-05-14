@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { NicknameDialog } from "@/components/auth/NicknameDialog";
@@ -24,12 +25,26 @@ import {
 } from "@/lib/supabase/auth";
 import {
   abortMatch,
+  createRematch,
+  fetchSeriesGames,
   finishMatch,
   joinMatch,
   submitMove,
 } from "@/lib/supabase/matches";
+import type { MatchRow, SeriesFormat } from "@/lib/supabase/types";
+
+const FORMAT_LABEL: Record<SeriesFormat, string> = {
+  bo1: "快速一局",
+  bo3: "三局两胜",
+  bo5: "五局三胜",
+};
+
+function targetWinsFor(format: SeriesFormat): number {
+  return format === "bo5" ? 3 : format === "bo3" ? 2 : 1;
+}
 
 export function MatchClient({ matchId }: { matchId: string }) {
+  const router = useRouter();
   const { match, moves, loading, error, connection, addLocalMove } =
     useMatchSync(matchId);
   const [session, setSession] = useState<Session | null | undefined>(
@@ -42,9 +57,14 @@ export function MatchClient({ matchId }: { matchId: string }) {
   const [shareCopied, setShareCopied] = useState(false);
   // 落子提交中标志：避免同一回合内连续点击造成的重复提交（ply 主键冲突）
   const [submitting, setSubmitting] = useState(false);
+  // 系列赛模式下保存全部局，用于计算比分和判断是否已分胜负
+  const [seriesGames, setSeriesGames] = useState<MatchRow[]>([]);
+  // 创建/跳转 rematch 中标志（避免对方重复触发）
+  const [rematchPending, setRematchPending] = useState(false);
   const { muted, playPlace, playWin, playLose, toggleMute } = useGameAudio();
   const prevPlyRef = useRef(0);
   const prevResultRef = useRef<"ongoing" | "win" | "draw">("ongoing");
+  const navigatedRef = useRef(false);
 
   useEffect(() => {
     getCurrentSession().then(setSession);
@@ -152,6 +172,101 @@ export function MatchClient({ matchId }: { matchId: string }) {
       );
     });
   }, [liveState, match, myPosition, history]);
+
+  // 拉系列赛对局列表（用于计算比分 + 判断系列赛是否分胜负）
+  useEffect(() => {
+    if (!match || match.series_format === "bo1") return;
+    const rootId = match.series_parent_id ?? match.id;
+    fetchSeriesGames(rootId)
+      .then(setSeriesGames)
+      .catch(() => undefined);
+  }, [
+    match?.id,
+    match?.series_format,
+    match?.series_parent_id,
+    match?.status,
+  ]);
+
+  const seriesScore = useMemo(() => {
+    if (!match || match.series_format === "bo1" || !match.player_a) {
+      return null;
+    }
+    let a = 0;
+    let b = 0;
+    for (const g of seriesGames) {
+      if (g.status !== "finished" || !g.winner || g.winner === "draw") {
+        continue;
+      }
+      const winnerUid = g.winner === "a" ? g.player_a : g.player_b;
+      if (winnerUid === match.player_a) a += 1;
+      else b += 1;
+    }
+    return { a, b };
+  }, [seriesGames, match]);
+
+  const seriesDecided = useMemo(() => {
+    if (!match || !seriesScore) return false;
+    const target = targetWinsFor(match.series_format);
+    return Math.max(seriesScore.a, seriesScore.b) >= target;
+  }, [seriesScore, match]);
+
+  // 自动创建下一局（仅系列赛 + 系列未分 + 我是最后落子方）
+  useEffect(() => {
+    if (!match || !liveState || !myPosition) return;
+    if (match.status !== "finished") return;
+    if (match.rematch_match_id) return;
+    if (match.series_format === "bo1") return;
+    if (seriesDecided) return;
+    if (rematchPending) return;
+
+    const lastMove = history.at(-1);
+    if (!lastMove) return;
+    const lastPlayer =
+      lastMove.stone === "black"
+        ? liveState.blackPlayer
+        : otherPlayer(liveState.blackPlayer);
+    if (lastPlayer !== myPosition) return;
+
+    setRematchPending(true);
+    createRematch(match.id).catch((err) => {
+      setActionError(err instanceof Error ? err.message : "创建下一局失败");
+      setRematchPending(false);
+    });
+  }, [
+    match,
+    liveState,
+    myPosition,
+    history,
+    seriesDecided,
+    rematchPending,
+  ]);
+
+  // 当 rematch_match_id 出现时：系列赛自动跳转；BO1 显示加入按钮在 UI 里
+  useEffect(() => {
+    if (!match?.rematch_match_id) return;
+    if (navigatedRef.current) return;
+    if (match.series_format === "bo1") return; // BO1 由用户点击决定
+    navigatedRef.current = true;
+    router.push(`/play/${match.rematch_match_id}`);
+  }, [match?.rematch_match_id, match?.series_format, router]);
+
+  const handleRematch = useCallback(async () => {
+    if (!match) return;
+    if (match.rematch_match_id) {
+      navigatedRef.current = true;
+      router.push(`/play/${match.rematch_match_id}`);
+      return;
+    }
+    setRematchPending(true);
+    try {
+      const newId = await createRematch(match.id);
+      navigatedRef.current = true;
+      router.push(`/play/${newId}`);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "再来一局失败");
+      setRematchPending(false);
+    }
+  }, [match, router]);
 
   const handlePlace = useCallback(
     async (x: number, y: number) => {
@@ -348,7 +463,19 @@ export function MatchClient({ matchId }: { matchId: string }) {
     <main className="flex flex-1 flex-col items-center px-4 py-8">
       <header className="mb-6 w-full max-w-6xl">
         <div className="flex items-center justify-between gap-3">
-          <h1 className="text-2xl font-bold">五子棋 · 联机</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold">五子棋 · 联机</h1>
+            {match.series_format !== "bo1" && seriesScore && (
+              <SeriesBadge
+                format={match.series_format}
+                round={match.series_round}
+                scoreA={seriesScore.a}
+                scoreB={seriesScore.b}
+                nameA={match.player_a_nickname}
+                nameB={match.player_b_nickname ?? "玩家2"}
+              />
+            )}
+          </div>
           <div className="flex items-center gap-3">
             <ConnectionBadge state={connection} />
             <button
@@ -427,6 +554,16 @@ export function MatchClient({ matchId }: { matchId: string }) {
               已走 {totalPly} 手
             </div>
           </div>
+
+          {match.status === "finished" && (
+            <FinishedActions
+              match={match}
+              rematchPending={rematchPending}
+              seriesScore={seriesScore}
+              seriesDecided={seriesDecided}
+              onRematch={handleRematch}
+            />
+          )}
         </aside>
 
         <MoveList
@@ -463,6 +600,118 @@ export function MatchClient({ matchId }: { matchId: string }) {
 // ============================================================================
 // Sub-components
 // ============================================================================
+
+function SeriesBadge({
+  format,
+  round,
+  scoreA,
+  scoreB,
+  nameA,
+  nameB,
+}: {
+  format: SeriesFormat;
+  round: number;
+  scoreA: number;
+  scoreB: number;
+  nameA: string;
+  nameB: string;
+}) {
+  return (
+    <div className="flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-xs dark:bg-amber-900/40">
+      <span className="font-medium text-amber-900 dark:text-amber-200">
+        {FORMAT_LABEL[format]}
+      </span>
+      <span className="text-amber-700 dark:text-amber-300">第 {round} 局</span>
+      <span className="font-mono font-bold text-amber-900 dark:text-amber-200">
+        {nameA} {scoreA} : {scoreB} {nameB}
+      </span>
+    </div>
+  );
+}
+
+function FinishedActions({
+  match,
+  rematchPending,
+  seriesScore,
+  seriesDecided,
+  onRematch,
+}: {
+  match: MatchRow;
+  rematchPending: boolean;
+  seriesScore: { a: number; b: number } | null;
+  seriesDecided: boolean;
+  onRematch: () => void;
+}) {
+  // 系列赛分胜负后：显示结果，不能再来
+  if (match.series_format !== "bo1" && seriesDecided && seriesScore) {
+    const winnerSide =
+      seriesScore.a > seriesScore.b ? "a" : "b";
+    const winnerName =
+      winnerSide === "a"
+        ? match.player_a_nickname
+        : match.player_b_nickname ?? "玩家2";
+    return (
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-center dark:border-amber-900 dark:bg-amber-950/40">
+        <div className="text-xs uppercase tracking-wide text-amber-700 dark:text-amber-300">
+          系列赛结束
+        </div>
+        <div className="mt-1 text-lg font-bold text-amber-900 dark:text-amber-200">
+          {winnerName} 胜
+        </div>
+        <div className="mt-1 font-mono text-sm text-amber-800 dark:text-amber-300">
+          {seriesScore.a} : {seriesScore.b}
+        </div>
+        <Link
+          href="/play"
+          className="mt-3 inline-block w-full rounded-md bg-amber-900 px-4 py-2 text-sm text-white hover:bg-amber-800"
+        >
+          返回大厅
+        </Link>
+      </div>
+    );
+  }
+
+  // 系列赛未分胜负：等下一局自动开始（或对方还在结算中）
+  if (match.series_format !== "bo1" && !seriesDecided) {
+    return (
+      <div className="rounded-xl border border-zinc-200 p-4 text-center dark:border-zinc-800">
+        <div className="text-xs text-zinc-500">系列赛进行中</div>
+        <div className="mt-2 text-sm">
+          {rematchPending || match.rematch_match_id
+            ? "下一局即将开始…"
+            : "等待对方结算本局…"}
+        </div>
+      </div>
+    );
+  }
+
+  // BO1：手动选"再来一局"或返回大厅
+  return (
+    <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
+      <div className="text-xs text-zinc-500">本局结束</div>
+      <div className="mt-3 flex flex-col gap-2">
+        <button
+          type="button"
+          onClick={onRematch}
+          disabled={rematchPending}
+          className="w-full rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
+        >
+          {match.rematch_match_id
+            ? "进入新对局"
+            : rematchPending
+              ? "准备中…"
+              : "再来一局"}
+        </button>
+        <Link
+          href="/play"
+          className="w-full rounded-md border border-zinc-300 px-4 py-2 text-center text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-900"
+        >
+          返回大厅
+        </Link>
+      </div>
+    </div>
+  );
+}
 
 function ConnectionBadge({
   state,

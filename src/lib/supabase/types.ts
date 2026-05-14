@@ -8,6 +8,7 @@
 export type GameType = "gomoku" | "xiangqi";
 export type MatchStatus = "waiting" | "playing" | "finished" | "aborted";
 export type MatchWinner = "a" | "b" | "draw";
+export type SeriesFormat = "bo1" | "bo3" | "bo5";
 
 export type MatchRow = {
   id: string;
@@ -26,6 +27,10 @@ export type MatchRow = {
   created_at: string;
   started_at: string | null;
   finished_at: string | null;
+  rematch_match_id: string | null;
+  series_format: SeriesFormat;
+  series_parent_id: string | null;
+  series_round: number;
 };
 
 export type MatchInsert = {
@@ -33,6 +38,11 @@ export type MatchInsert = {
   player_a: string;
   player_a_nickname: string;
   status?: MatchStatus;
+  player_b?: string;
+  player_b_nickname?: string;
+  series_format?: SeriesFormat;
+  series_parent_id?: string;
+  series_round?: number;
 };
 
 export type MatchUpdate = Partial<Omit<MatchRow, "id" | "created_at">>;
