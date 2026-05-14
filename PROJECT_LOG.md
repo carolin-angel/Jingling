@@ -490,6 +490,38 @@ Only letters, digits, and underscores are allowed.
 !.env.example
 ```
 
+#### 问题 21：联机时"记录失败"弹窗 + 偶发"下不了棋要刷新"（实战发现）
+
+**现象**（2026-05-14 实战）：
+- 下棋过程中偶尔弹出红色"记录失败"提示，但棋面正常继续
+- 有时棋面突然不能下了（自己看得到自己棋，对方看不到），刷新页面就好
+
+**原因**：
+1. **记录失败**：客户端有竞态。`submitMove` 提交后**不**做乐观更新，等 Realtime
+   回传才看到棋子，这段 100-300ms 窗口内如果用户再点一下，`ply = history.length + 1`
+   仍是同一个数 → 数据库主键冲突。
+2. **下不了棋**：Supabase Realtime 走 WebSocket，长连接在国内（即使 VPN）会偶尔
+   被中间路由 reset，客户端 **不知道**它断了。表现：你的落子提交成功 → 但对方
+   没收到 → 你也收不到对方的回应 → 看起来卡死。
+
+**解决**：
+
+`useMatchSync` 重写：
+- 暴露 `addLocalMove(move)`：上层可立即合并本地刚提交的一手到 moves 数组，乐观显示
+- 暴露 `connection: "connecting" | "connected" | "reconnecting" | "error"`：UI 可显示重连状态
+- `subscribe()` 内监听 status 回调：`CHANNEL_ERROR` / `TIMED_OUT` / `CLOSED` 时
+  按指数退避（1s/2s/4s/8s/15s 上限）自动重新订阅
+- 每次重新 `SUBSCRIBED` 后立即 `refetch()` 一次，补回断流期间漏掉的 moves
+- `visibilitychange` 事件：标签从后台回到前台时 `refetch()`，避免 WebSocket
+  在后台被浏览器节流后悄悄断开
+- 用 `Map` 按 ply 合并 incoming moves，避免任何重复
+
+`MatchClient` 加 `submitting` 锁：
+- 提交期间 `canPlay = false`，棋盘进入只读不接受点击
+- 提交成功后立即 `addLocalMove` 乐观显示，不等 Realtime 回传
+- finally 内重置 `submitting`，错误也能解锁
+- 新增 `<ConnectionBadge state={connection} />` 在标题栏右上角显示"连接中…/重连中…/连接异常"，正常连接时不显示
+
 #### 问题 20：活四自动判胜忽略对方"下一步即五连"威胁（实战发现）
 
 **现象**（2026-05-14 实战）：

@@ -29,7 +29,8 @@ import {
 } from "@/lib/supabase/matches";
 
 export function MatchClient({ matchId }: { matchId: string }) {
-  const { match, moves, loading, error } = useMatchSync(matchId);
+  const { match, moves, loading, error, connection, addLocalMove } =
+    useMatchSync(matchId);
   const [session, setSession] = useState<Session | null | undefined>(
     undefined,
   );
@@ -38,6 +39,8 @@ export function MatchClient({ matchId }: { matchId: string }) {
   const [overlayDismissed, setOverlayDismissed] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [shareCopied, setShareCopied] = useState(false);
+  // 落子提交中标志：避免同一回合内连续点击造成的重复提交（ply 主键冲突）
+  const [submitting, setSubmitting] = useState(false);
   const { muted, playPlace, playWin, playLose, toggleMute } = useGameAudio();
   const prevPlyRef = useRef(0);
   const prevResultRef = useRef<"ongoing" | "win" | "draw">("ongoing");
@@ -89,6 +92,7 @@ export function MatchClient({ matchId }: { matchId: string }) {
   const isLive = viewPly === null || viewPly === history.length;
 
   const canPlay = useMemo(() => {
+    if (submitting) return false;
     if (!liveState || !match || !myPosition) return false;
     if (match.status !== "playing") return false;
     if (!isLive) return false;
@@ -98,7 +102,7 @@ export function MatchClient({ matchId }: { matchId: string }) {
         ? liveState.blackPlayer
         : otherPlayer(liveState.blackPlayer);
     return whoseTurn === myPosition;
-  }, [liveState, match, myPosition, isLive]);
+  }, [liveState, match, myPosition, isLive, submitting]);
 
   // 落子音效
   useEffect(() => {
@@ -153,20 +157,29 @@ export function MatchClient({ matchId }: { matchId: string }) {
       if (!match || !liveState || !canPlay) return;
       const stone = liveState.turn;
       const notation = gomoku.serializeMove({ x, y });
+      const ply = history.length + 1;
+      const data = { x, y, stone };
+
+      // 锁定棋盘，避免双击重复提交导致 ply 主键冲突
+      setSubmitting(true);
       try {
-        await submitMove({
-          matchId: match.id,
-          ply: history.length + 1,
+        await submitMove({ matchId: match.id, ply, notation, data });
+        // 乐观更新：立即把这一手合并到本地 moves，不等 Realtime 回传
+        // Realtime 后续回传同 ply 会被 useMatchSync 内部去重忽略
+        addLocalMove({
+          match_id: match.id,
+          ply,
           notation,
-          data: { x, y, stone },
+          data,
+          created_at: new Date().toISOString(),
         });
       } catch (err) {
-        setActionError(
-          err instanceof Error ? err.message : "落子失败",
-        );
+        setActionError(err instanceof Error ? err.message : "落子失败");
+      } finally {
+        setSubmitting(false);
       }
     },
-    [match, liveState, canPlay, history.length],
+    [match, liveState, canPlay, history.length, addLocalMove],
   );
 
   const handleJoin = useCallback(
@@ -305,6 +318,7 @@ export function MatchClient({ matchId }: { matchId: string }) {
         <div className="flex items-center justify-between gap-3">
           <h1 className="text-2xl font-bold">五子棋 · 联机</h1>
           <div className="flex items-center gap-3">
+            <ConnectionBadge state={connection} />
             <button
               type="button"
               onClick={toggleMute}
@@ -417,6 +431,33 @@ export function MatchClient({ matchId }: { matchId: string }) {
 // ============================================================================
 // Sub-components
 // ============================================================================
+
+function ConnectionBadge({
+  state,
+}: {
+  state: "connecting" | "connected" | "reconnecting" | "error";
+}) {
+  if (state === "connected") return null;
+  const label =
+    state === "connecting"
+      ? "连接中…"
+      : state === "reconnecting"
+        ? "重连中…"
+        : "连接异常";
+  const tone =
+    state === "error"
+      ? "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300"
+      : "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
+  return (
+    <span
+      className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${tone}`}
+      title="实时同步通道状态"
+    >
+      <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-current" />
+      {label}
+    </span>
+  );
+}
 
 function CenterMessage({
   text,
