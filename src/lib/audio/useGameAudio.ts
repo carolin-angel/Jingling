@@ -58,8 +58,8 @@ export function useGameAudio() {
   );
 
   /**
-   * 棋子落盘的"哒"声：短促噪声（高频咔）+ 快速衰减低频本体（落盘共鸣）。
-   * 比单一正弦更像真实棋子打在木板上。
+   * 棋子落盘的"哒"声：轻巧版——短促噪声（高频咔）+ 极短中频本体（点拍感）。
+   * 调参依据：把上一版偏闷的 80Hz 低频本体提到 400Hz 中频，时长砍掉一半。
    */
   const playPlace = useCallback(() => {
     if (muted) return;
@@ -68,8 +68,8 @@ export function useGameAudio() {
     try {
       const t0 = ctx.currentTime;
 
-      // 1. 木质表面"咔"：滤波后的短促白噪声
-      const noiseDuration = 0.045;
+      // 1. 木质表面"咔"：滤波后的短促白噪声（提亮中心频率到 2.8kHz）
+      const noiseDuration = 0.025;
       const buffer = ctx.createBuffer(
         1,
         Math.max(1, Math.floor(ctx.sampleRate * noiseDuration)),
@@ -84,30 +84,30 @@ export function useGameAudio() {
 
       const filter = ctx.createBiquadFilter();
       filter.type = "bandpass";
-      filter.frequency.value = 1800;
-      filter.Q.value = 3;
+      filter.frequency.value = 2800;
+      filter.Q.value = 4;
 
       const noiseGain = ctx.createGain();
-      noiseGain.gain.setValueAtTime(0.28, t0);
+      noiseGain.gain.setValueAtTime(0.25, t0);
       noiseGain.gain.exponentialRampToValueAtTime(0.001, t0 + noiseDuration);
 
       noise.connect(filter).connect(noiseGain).connect(ctx.destination);
       noise.start(t0);
       noise.stop(t0 + noiseDuration);
 
-      // 2. 棋子本体"哒"：低频振荡，频率快速下沉模拟落地共鸣
+      // 2. 棋子本体"哒"：三角波中频，30ms 内 500Hz → 220Hz 微微下沉
       const body = ctx.createOscillator();
-      body.type = "sine";
-      body.frequency.setValueAtTime(260, t0);
-      body.frequency.exponentialRampToValueAtTime(80, t0 + 0.07);
+      body.type = "triangle";
+      body.frequency.setValueAtTime(500, t0);
+      body.frequency.exponentialRampToValueAtTime(220, t0 + 0.028);
 
       const bodyGain = ctx.createGain();
-      bodyGain.gain.setValueAtTime(0.22, t0);
-      bodyGain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.08);
+      bodyGain.gain.setValueAtTime(0.14, t0);
+      bodyGain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.03);
 
       body.connect(bodyGain).connect(ctx.destination);
       body.start(t0);
-      body.stop(t0 + 0.08);
+      body.stop(t0 + 0.03);
     } catch {
       // ignore audio errors silently
     }
