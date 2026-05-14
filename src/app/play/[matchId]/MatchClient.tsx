@@ -23,6 +23,7 @@ import {
   type Session,
 } from "@/lib/supabase/auth";
 import {
+  abortMatch,
   finishMatch,
   joinMatch,
   submitMove,
@@ -210,6 +211,20 @@ export function MatchClient({ matchId }: { matchId: string }) {
     }
   }, []);
 
+  const handleAbort = useCallback(async () => {
+    if (!match) return;
+    const ok = window.confirm(
+      "确定关闭这个房间吗？\n关闭后链接失效，对手将无法加入。",
+    );
+    if (!ok) return;
+    try {
+      await abortMatch(match.id);
+      // Realtime UPDATE 会自动把 status 切到 aborted，UI 自然过渡
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "关闭房间失败");
+    }
+  }, [match]);
+
   // 渲染状态机
   if (loading || session === undefined) {
     return <CenterMessage text="加载房间中…" />;
@@ -240,6 +255,7 @@ export function MatchClient({ matchId }: { matchId: string }) {
           match={match}
           shareCopied={shareCopied}
           onCopy={handleCopyShare}
+          onAbort={handleAbort}
         />
       );
     }
@@ -251,6 +267,22 @@ export function MatchClient({ matchId }: { matchId: string }) {
         onDialogClose={() => setJoinDialogOpen(false)}
         onDialogSubmit={handleJoin}
         defaultNickname={session?.nickname}
+      />
+    );
+  }
+
+  // ============================
+  // 状态：aborted (废弃)
+  // ============================
+  if (match.status === "aborted") {
+    return (
+      <CenterMessage
+        text={
+          isHost
+            ? "房间已关闭。"
+            : `房主已关闭这个房间，无法加入。`
+        }
+        variant="info"
       />
     );
   }
@@ -479,10 +511,12 @@ function WaitingHost({
   match,
   shareCopied,
   onCopy,
+  onAbort,
 }: {
   match: { id: string; player_a_nickname: string; game_type: string };
   shareCopied: boolean;
   onCopy: () => void;
+  onAbort: () => void;
 }) {
   return (
     <main className="flex flex-1 flex-col items-center justify-center px-6 py-16">
@@ -508,6 +542,13 @@ function WaitingHost({
         <div className="mt-6 text-xs text-zinc-400">
           页面会自动检测到对手加入，无需刷新
         </div>
+        <button
+          type="button"
+          onClick={onAbort}
+          className="mt-6 text-xs text-rose-600 hover:underline dark:text-rose-400"
+        >
+          关闭房间
+        </button>
       </div>
     </main>
   );

@@ -72,3 +72,20 @@ export async function finishMatch(opts: {
     .eq("id", opts.matchId);
   if (error) throw new Error(`收尾对局失败：${error.message}`);
 }
+
+/**
+ * 把一场等待中的房间标记为已废弃（aborted）。
+ * 只有 waiting 状态可关闭；进行中的对局不应该直接 abort，应该走投降/求和（暂未实现）。
+ */
+export async function abortMatch(matchId: string): Promise<void> {
+  const supabase = createBrowserSupabase();
+  const { error } = await supabase
+    .from("matches")
+    .update({
+      status: "aborted",
+      finished_at: new Date().toISOString(),
+    })
+    .eq("id", matchId)
+    .eq("status", "waiting"); // 保险：DB 层也只在 waiting 时允许
+  if (error) throw new Error(`关闭房间失败：${error.message}`);
+}

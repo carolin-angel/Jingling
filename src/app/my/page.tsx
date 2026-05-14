@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import {
   fetchMyMatches,
   getCurrentSession,
   type Session,
 } from "@/lib/supabase/auth";
+import { abortMatch } from "@/lib/supabase/matches";
 import type { MatchRow } from "@/lib/supabase/types";
 
 const GAME_LABEL: Record<string, string> = {
@@ -26,6 +27,30 @@ export default function MyMatchesPage() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
   const [matches, setMatches] = useState<MatchRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [aborting, setAborting] = useState<string | null>(null);
+
+  const handleAbort = useCallback(async (matchId: string) => {
+    const ok = window.confirm("确定关闭这个等待中的房间吗？");
+    if (!ok) return;
+    setAborting(matchId);
+    try {
+      await abortMatch(matchId);
+      // 本地立即把状态改成 aborted
+      setMatches((prev) =>
+        prev
+          ? prev.map((m) =>
+              m.id === matchId
+                ? { ...m, status: "aborted", finished_at: new Date().toISOString() }
+                : m,
+            )
+          : prev,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "关闭房间失败");
+    } finally {
+      setAborting(null);
+    }
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -160,12 +185,24 @@ export default function MyMatchesPage() {
                         {formatDate(m.created_at)}
                       </td>
                       <td className="px-4 py-2 text-right">
-                        <Link
-                          href={`/play/${m.id}`}
-                          className="text-xs text-zinc-900 hover:underline dark:text-zinc-100"
-                        >
-                          进入 →
-                        </Link>
+                        <div className="flex items-center justify-end gap-3">
+                          {m.status === "waiting" && myRole === "a" && (
+                            <button
+                              type="button"
+                              onClick={() => handleAbort(m.id)}
+                              disabled={aborting === m.id}
+                              className="text-xs text-rose-600 hover:underline disabled:opacity-50 dark:text-rose-400"
+                            >
+                              {aborting === m.id ? "关闭中…" : "关闭"}
+                            </button>
+                          )}
+                          <Link
+                            href={`/play/${m.id}`}
+                            className="text-xs text-zinc-900 hover:underline dark:text-zinc-100"
+                          >
+                            进入 →
+                          </Link>
+                        </div>
                       </td>
                     </tr>
                   );
